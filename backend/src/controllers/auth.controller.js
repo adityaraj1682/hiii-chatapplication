@@ -23,8 +23,8 @@ const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const mailTransporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: process.env.EMAIL_USER, // 
-    pass: process.env.EMAIL_PASS, // Your 16-character Google App Password
+    user: 'aditya.raj@iic.ac.in', // 
+    pass: "okylsslqtizpsrpm", // Your 16-character Google App Password
   },
 });
 
