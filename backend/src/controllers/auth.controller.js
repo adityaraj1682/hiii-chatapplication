@@ -41,7 +41,7 @@ async function generateAndSendOTP(user, res, messageSuccess, isBrandNewUser = fa
     await user.save();
 
     const mailOptions = {
-      from: `"HiiiChat Security" <${process.env.EMAIL_USER}>`, 
+      from: `"HiiiChat Security" <aditya.raj@iic.ac.in>`, 
       to: user.email,
       subject: "🔒 Your 6-Digit Verification Code",
       html: `
