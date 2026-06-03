@@ -23,8 +23,8 @@ const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const mailTransporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: 'aditya.raj@iic.ac.in', // 
-    pass: "okylsslqtizpsrpm", // Your 16-character Google App Password
+    user: process.env.EMAIL_USER, // 
+    pass: process.env.EMAIL_PASS, // Your 16-character Google App Password
   },
 });
 
@@ -41,7 +41,7 @@ async function generateAndSendOTP(user, res, messageSuccess, isBrandNewUser = fa
     await user.save();
 
     const mailOptions = {
-      from: `"HiiiChat Security" <aditya.raj@iic.ac.in>`, 
+      from: `"HiiiChat Security" <${process.env.EMAIL_USER}>`, 
       to: user.email,
       subject: "🔒 Your 6-Digit Verification Code",
       html: `
