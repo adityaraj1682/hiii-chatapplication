@@ -1,0 +1,67 @@
+
+@import "tailwindcss";
+@plugin "../node_modules/daisyui" {
+  themes: all;
+}
+
+
+/* .str-chat_channel{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(to bottom, green, yellow);
+  height: 100%;
+}
+
+.str-chat_container{
+  max-width: 1200px;
+  width: 100%;
+  height: 80% !important;
+  margin: 0 auto !important;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+.str-chat_list{
+  background-color:#ffffff ;
+  padding: 12px;
+}
+
+.str-chat_list-notifications{
+  display: none;
+}
+
+.str-chat_message-composer{
+  border-top: 1px solid #ddd;
+} */
+
+/* Force the chat view layer to expand across the full width of the card container */
+.custom-chat-wrapper .str-chat__container,
+.custom-chat-wrapper .str-chat__main-panel,
+.custom-chat-wrapper .str-chat__view-column,
+.custom-chat-wrapper .str-chat__channel {
+  width: 100% !important;
+  max-width: 100% !important;
+  flex: 1 1 auto !important;
+}
+
+/* Force the message lists and bubbles to stretch comfortably */
+.custom-chat-wrapper .str-chat__list,
+.custom-chat-wrapper .str-chat__message-list,
+.custom-chat-wrapper .str-chat__message-input-textarea {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* Remove default header line and make room for elements */
+.str-chat__channel-header {
+  border-bottom: none !important;
+  box-shadow: none !important;
+  background-color: #ffffff !important;
+  width: 100% !important;
+  padding: 1rem 1.5rem !important;
+}
+
+/* Ensure right container actions do not compress our custom elements */
+.str-chat__channel-header-end {
+  display: none !important;
+}
