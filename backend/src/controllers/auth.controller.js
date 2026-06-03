@@ -101,13 +101,13 @@ export async function signup(req, res) {
         }
 
         const emailCheck = await validateEmailExistence({
-            email: email,
-            validateRegex: true,
-            validateMx: true,      // Confirms the domain (like gmail.com) actually hosts mail
-            validateTypo: true,    // Catches things like user@gmaill.com
-            validateDisposable: true, // Blocks temporary fake emails (like tempmail.com)
-            validateSMTP: true     // Pings the mailbox to make sure the user account exists
-        });
+                email: email,
+                validateRegex: true,
+                validateMx: true,      // Keeps checking if the domain is real (e.g., gmail.com)
+                validateTypo: true,    // Keeps catching typos
+                validateDisposable: true, // Blocks spam temp emails
+                validateSMTP: false     // 🛠️ CHANGED TO FALSE: Stops checking the exact mailbox to prevent Render network blockages
+            });
 
         if (!emailCheck.valid) {
             // Determine a clean, descriptive message for the user based on why it failed
