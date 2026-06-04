@@ -32,24 +32,22 @@ function buildCommentTree(comments, parentId = null) {
   return branch;
 }
 
-/**
- * 1. Create a new Post
- */
+
 export async function createPost(req, res) {
   try {
     const userId = req.user?._id || req.user?.id;
     
-    // 🚀 MEMORY FIX: Destructure out the image, but let us overwrite it later
-    let { text, postImage } = req.body; 
+    // 🚀 FIXED: Read 'content' instead of 'text' to match your Schema
+    let { content, postImage } = req.body; 
 
-    // (Your existing validation checks go here, e.g.)
-    if (!text && !postImage) {
+    // Validation checks updated to match your schema properties
+    if (!content && !postImage) {
       return res.status(400).json({ message: "Post content or an image is required" });
     }
 
     let imageUrl = "";
 
-    // If an image string exists, upload it
+    // If an image string exists, process and upload it safely
     if (postImage && postImage.startsWith("data:image/")) {
       console.log("Valid Base64 post image detected. Syncing with ImageKit...");
       try {
@@ -64,17 +62,17 @@ export async function createPost(req, res) {
         console.error("ImageKit Post Upload Failure:", ikError);
         return res.status(500).json({ message: "Image cloud sync failed." });
       } finally {
-        // 🚀 THE CRITICAL WIPE: Kill the large memory consumer immediately!
+        // 🧼 MEMORY SAFETY WIPE: Clears the large memory consumer out of RAM immediately
         postImage = null;
         req.body.postImage = null;
       }
     }
 
-    // Create the document using the uploaded URL reference
+    // 🚀 FIXED: Creating the record using the exact properties defined in your post.js Schema
     const newPost = await postModel.create({
       user: userId,
-      text: text || "",
-      image: imageUrl, // Saves the lightweight URL string to MongoDB
+      content: content || "", // Saves to your 'content' schema field
+      postImage: imageUrl,    // Saves to your 'postImage' schema field
     });
 
     const populatedPost = await newPost.populate("user", "fullName profilePic");
