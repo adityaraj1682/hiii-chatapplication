@@ -5,6 +5,7 @@ import useAuthUser from "../hooks/useAuthUser";
 import { getFeedPosts, createPost, getFeedStories, createStory, queryChatbot } from "../lib/api"; // 🔥 Added queryChatbot
 import PostCard from "../components/PostCard";
 import CameraPostCapture from "../components/CameraCapture"; 
+import imageCompression from "browser-image-compression"; // 🚀 ADDED: Compression Utility
 
 export default function HomePage() {
   const queryClient = useQueryClient();
@@ -78,21 +79,49 @@ export default function HomePage() {
     },
   });
 
-  const handleImageUpload = (e, type = "post") => {
+  // 🚀 ADDED: Frontend Image Compression Integration
+  const handleImageUpload = async (e, type = "post") => {
     const file = e.target.files[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      if (type === "story") {
-        setStoryImageBase64(reader.result);
-        setIsStoryCameraOpen(false);
-      } else {
-        setPostImageBase64(reader.result);
-        setIsCameraViewOpen(false);
-      }
+    // Standard client compression options keeping files around ~150KB max
+    const options = {
+      maxSizeMB: 0.15,       
+      maxWidthOrHeight: 1024, 
+      useWebWorker: true
     };
-    reader.readAsDataURL(file);
+
+    try {
+      console.log(`Original size: ${(file.size / 1024 / 1024).toFixed(2)} MB`);
+      const compressedFile = await imageCompression(file, options);
+      console.log(`Compressed size: ${(compressedFile.size / 1024 / 1024).toFixed(2)} MB`);
+
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (type === "story") {
+          setStoryImageBase64(reader.result);
+          setIsStoryCameraOpen(false);
+        } else {
+          setPostImageBase64(reader.result);
+          setIsCameraViewOpen(false);
+        }
+      };
+      reader.readAsDataURL(compressedFile);
+    } catch (error) {
+      console.error("Compression failed, using fallback:", error);
+      // Fallback behavior if compression runs into an error
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (type === "story") {
+          setStoryImageBase64(reader.result);
+          setIsStoryCameraOpen(false);
+        } else {
+          setPostImageBase64(reader.result);
+          setIsCameraViewOpen(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handlePostSubmit = (e) => {
@@ -456,27 +485,27 @@ export default function HomePage() {
                 <Sparkles size={16}/>
                 <h4 className="font-bold text-xs">Llama AI Assistant</h4>
               </div>
-              <button onClick={() => setIsChatOpen(false)} className="btn btn-ghost btn-circle btn-xs text-primary-content">
+              <div onClick={() => setIsChatOpen(false)} className="btn btn-ghost btn-circle btn-xs text-primary-content cursor-pointer">
                 <X size={16}/>
-              </button>
+              </div>
             </div>
 
             {/* Chat message dialog layout tracks */}
             <div className="flex-1 p-3 overflow-y-auto space-y-2 text-xs no-scrollbar bg-base-100">
               {chatMessages.map((msg, index) => (
                 <div key={index} className={`chat ${msg.role === "user" ? "chat-end" : "chat-start"}`}>
-                <div className={`chat-bubble max-w-[85%] text-[11px] leading-relaxed font-medium rounded-xl p-2 px-3 ${
-                 msg.role === "user" ? "chat-bubble-primary" : "chat-bubble-neutral text-base-content"
-              }`}>
-      {/* If it contains an image tag string, render it as innerHTML, else render standard text */}
-      {msg.content.includes("<img") ? (
-        <div dangerouslySetInnerHTML={{ __html: msg.content }} />
-      ) : (
-        msg.content
-      )}
-    </div>
-  </div>
-))}
+                  <div className={`chat-bubble max-w-[85%] text-[11px] leading-relaxed font-medium rounded-xl p-2 px-3 ${
+                    msg.role === "user" ? "chat-bubble-primary" : "chat-bubble-neutral text-base-content"
+                  }`}>
+                    {/* If it contains an image tag string, render it as innerHTML, else render standard text */}
+                    {msg.content.includes("<img") ? (
+                      <div dangerouslySetInnerHTML={{ __html: msg.content }} />
+                    ) : (
+                      msg.content
+                    )}
+                  </div>
+                </div>
+              ))}
               {isChatPending && (
                 <div className="chat chat-start">
                   <div className="chat-bubble chat-bubble-neutral flex items-center gap-1.5 p-2 px-3 text-[11px] rounded-xl">
