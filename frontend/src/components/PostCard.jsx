@@ -41,18 +41,18 @@ export default function PostCard({ post, currentUserId }) {
 
   // 2. Add Top-Level Comment Mutation
   const commentMutation = useMutation({
-    mutationFn: (text) => addComment(post._id, text),
-    onSuccess: (updatedCommentsTree) => {
-      queryClient.setQueryData(["posts"], (oldPosts) => {
-        if (!oldPosts) return [];
-        return oldPosts.map((p) => 
-          p._id === post._id ? { ...p, comments: updatedCommentsTree } : p
-        );
-      });
-      setCommentText("");
-      setShowComments(true);
-    },
-  });
+  mutationFn: ({ text }) => addComment(post._id, text),
+  onSuccess: (updatedCommentsTree) => {
+    queryClient.setQueryData(["posts"], (oldPosts) => {
+      if (!oldPosts) return [];
+      return oldPosts.map((p) => 
+        p._id === post._id ? { ...p, comments: updatedCommentsTree } : p
+      );
+    });
+    setCommentText("");
+    setShowComments(true);
+  },
+});
 
   // 3. Delete Post Mutation
   const deletePostMutation = useMutation({
@@ -254,7 +254,9 @@ export default function PostCard({ post, currentUserId }) {
       )}
 
       {/* 5. Root Level Input Footer */}
-      <form onSubmit={(e) => { e.preventDefault(); if(commentText.trim()) commentMutation.mutate(commentText); }} className="flex items-center border-t border-base-300/60 px-3 py-2.5">
+      <form onSubmit={(e) => { e.preventDefault(); 
+        if (commentText.trim()) commentMutation.mutate({ text: commentText });}}
+        className="flex items-center border-t border-base-300/60 px-3 py-2.5">
         <input
           type="text"
           placeholder="Add a comment..."

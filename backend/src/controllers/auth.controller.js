@@ -9,7 +9,7 @@ import crypto from "crypto";       // 🔒 Added for crypto secure OTP strings
 import nodemailer from "nodemailer"; // 📧 Added for email dispatches
 import validator from 'validator';
 import { UAParser } from "ua-parser-js"; // 📱 Added for user-agent parsing
-
+import { compressBase64Image } from "../utils/compressor.js";
 dotenv.config();
 
 const imagekit = new ImageKit({
@@ -330,7 +330,9 @@ export async function logout(req, res) {
 export async function onboard(req, res) {
   try {
     const userId = req.user._id;
-    const { fullName, bio, nativeLanguage, learningLanguage, location, profilePic } = req.body;
+    
+    // 🚀 MEMORY FIX: Destructure out fields, using 'let' for profilePic so we can wipe it safely
+    let { fullName, bio, nativeLanguage, learningLanguage, location, profilePic } = req.body;
 
     if (!fullName || !bio || !nativeLanguage || !learningLanguage || !location) {
       return res.status(400).json({
@@ -349,23 +351,36 @@ export async function onboard(req, res) {
     let imageUrl = profilePic; 
 
     if (profilePic && profilePic.startsWith("data:image/")) {
-      console.log("Valid Base64 image payload detected. Syncing with ImageKit...");
+      console.log("📸 Raw avatar image intercepted. Executing memory-safe backend compression...");
       
-      try {
-        const uploadResponse = await imagekit.upload({
-          file: profilePic, 
-          fileName: `avatar_${userId}_${Date.now()}.png`,
-          folder: "/user_profiles",
-        });
+      // 🚀 THE MAGIC LINE: Compress the raw avatar base64 string down
+      const compressedBase64 = await compressBase64Image(profilePic, 60);
+      
+      // 🧼 IMMEDIATE RECLAIM: Wipe the client's heavy uncompressed payload out of RAM
+      profilePic = null;
+      req.body.profilePic = null;
 
-        imageUrl = uploadResponse.url; 
-        console.log("ImageKit upload successful! URL:", imageUrl);
+      if (compressedBase64) {
+        console.log("Valid compressed avatar payload ready. Syncing with ImageKit...");
+        try {
+          const uploadResponse = await imagekit.upload({
+            file: compressedBase64, // 🚀 Uses the lightweight compressed string
+            fileName: `avatar_${userId}_${Date.now()}.png`,
+            folder: "/user_profiles",
+          });
 
-      } catch (ikError) {
-        console.error("ImageKit SDK Upload Failure Details:", ikError);
-        return res.status(500).json({ 
-          message: "Image cloud sync failed. Please check backend .env API keys." 
-        });
+          imageUrl = uploadResponse.url; 
+          console.log("ImageKit upload successful! URL:", imageUrl);
+
+        } catch (ikError) {
+          console.error("ImageKit SDK Upload Failure Details:", ikError);
+          return res.status(500).json({ 
+            message: "Image cloud sync failed. Please check backend .env API keys." 
+          });
+        } finally {
+          // Clean up the remaining compression string block from memory entirely
+          compressedBase64 = null;
+        }
       }
     }
 
@@ -409,7 +424,6 @@ export async function onboard(req, res) {
     res.status(500).json({ message: "Internal Server error" });
   }
 }
-
 export async function googleAuth(req, res) {
     const { token } = req.body;
     try {
@@ -601,20 +615,28 @@ export async function updateProfile(req, res) {
 
         let imageUrl = profilePic; 
 
-        if (profilePic && profilePic.startsWith("data:image/")) {
-            console.log("Fresh base64 string stream tracked inside updateProfile. Syncing with ImageKit cloud gateway...");
-            try {
-                const uploadResponse = await imagekit.upload({
-                    file: profilePic, 
-                    fileName: `avatar_update_${userId}_${Date.now()}.png`,
-                    folder: "/user_profiles",
-                });
-                imageUrl = uploadResponse.url; 
-            } catch (ikError) {
-                console.error("ImageKit compilation sync fault:", ikError.message);
-                return res.status(500).json({ message: "Failed syncing image media stream assets to clouds storage" });
-            }
-        }
+         if (profilePic && profilePic.startsWith("data:image/")) {
+        console.log("Valid Base64 image payload detected. Syncing with ImageKit...");
+      
+        try {
+        const uploadResponse = await imagekit.upload({
+          file: profilePic, 
+          fileName: `avatar_${userId}_${Date.now()}.png`,
+          folder: "/user_profiles",
+        });
+
+        imageUrl = uploadResponse.url; 
+        req.body.profilePic = null;
+        profilePic = null;
+        console.log("ImageKit upload successful! URL:", imageUrl);
+
+      } catch (ikError) {
+        console.error("ImageKit SDK Upload Failure Details:", ikError);
+        return res.status(500).json({ 
+          message: "Image cloud sync failed. Please check backend .env API keys." 
+        });
+      }
+    }
 
         const updatedUser = await userModel.findByIdAndUpdate(
             userId,

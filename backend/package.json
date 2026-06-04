@@ -31,6 +31,7 @@
     "mongoose": "^9.4.1",
     "nodemailer": "^8.0.7",
     "npm": "^11.14.1",
+    "sharp": "^0.34.5",
     "stream-chat": "^9.41.0",
     "ua-parser-js": "^2.0.10",
     "validator": "^13.15.35"

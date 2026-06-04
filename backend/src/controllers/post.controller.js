@@ -5,6 +5,7 @@ import ImageKit from "imagekit";
 import dotenv from "dotenv";
 import { isContentSafe } from "../utils/moderation.js";
 import storyModel from "../models/Story.js";
+import { compressBase64Image } from "../utils/compressor.js";
 
 dotenv.config();
 
@@ -37,7 +38,7 @@ export async function createPost(req, res) {
   try {
     const userId = req.user?._id || req.user?.id;
     
-    // 🚀 FIXED: Read 'content' instead of 'text' to match your Schema
+    // 🚀 MEMORY FIX: Destructure out fields, allowing variable overwrites for garbage collection
     let { content, postImage } = req.body; 
 
     // Validation checks updated to match your schema properties
@@ -49,22 +50,29 @@ export async function createPost(req, res) {
 
     // If an image string exists, process and upload it safely
     if (postImage && postImage.startsWith("data:image/")) {
-      console.log("Valid Base64 post image detected. Syncing with ImageKit...");
-      try {
-        const uploadResponse = await imagekit.upload({
-          file: postImage,
-          fileName: `post_${userId}_${Date.now()}.png`,
-          folder: "/user_posts",
-        });
-        imageUrl = uploadResponse.url;
-        console.log("ImageKit post upload successful! URL:", imageUrl);
-      } catch (ikError) {
-        console.error("ImageKit Post Upload Failure:", ikError);
-        return res.status(500).json({ message: "Image cloud sync failed." });
-      } finally {
-        // 🧼 MEMORY SAFETY WIPE: Clears the large memory consumer out of RAM immediately
-        postImage = null;
-        req.body.postImage = null;
+      console.log("📸 Raw image intercepted. Executing memory-safe backend compression...");
+      
+      // 🚀 THE MAGIC LINE: Shrink the image down using your utility helper function
+      const compressedBase64 = await compressBase64Image(postImage, 60);
+      
+      // 🧼 IMMEDIATE RECLAIM: Forcefully wipe the client's original heavy payload string out of RAM
+      postImage = null;
+      req.body.postImage = null;
+
+      if (compressedBase64) {
+        console.log("⚡ Compression successful! Dispatched light optimized image stream to ImageKit...");
+        try {
+          const uploadResponse = await imagekit.upload({
+            file: compressedBase64, // 🚀 Uses the tiny compressed version
+            fileName: `post_${userId}_${Date.now()}.png`,
+            folder: "/user_posts",
+          });
+          imageUrl = uploadResponse.url;
+          console.log("ImageKit post upload successful! URL:", imageUrl);
+        } catch (ikError) {
+          console.error("ImageKit Post Upload Failure:", ikError);
+          return res.status(500).json({ message: "Image cloud sync failed." });
+        }
       }
     }
 
@@ -83,7 +91,6 @@ export async function createPost(req, res) {
     return res.status(500).json({ message: "Internal Server Error" });
   }
 }
-
 export async function toggleLikePost(req, res) {
     try {
         const { id: postId } = req.params;
