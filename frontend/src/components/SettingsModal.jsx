@@ -1,10 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react'
 import useAuthUser from '../hooks/useAuthUser'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { 
-  X, User, KeyRound, FileText, Mail, ArrowRight, Camera, Edit2, Lock, ShieldAlert, Trash2
+  X, User, KeyRound, FileText, Mail, ArrowRight, Camera, Edit2, Lock, ShieldAlert, Trash2, Smartphone, Monitor, Laptop, HelpCircle
 } from 'lucide-react'
-import { deactivateAccount, deleteAccount } from '../lib/api' // 🚀 Using your clean API abstractions
+import { 
+  deactivateAccount, 
+  deleteAccount, 
+  updateProfile, 
+  requestPasswordOTP, 
+  resetPassword,
+  getUserSessions,
+  logoutSpecificDevice,
+  logoutAllDevices
+} from '../lib/api' // 🚀 Using your clean API abstractions
 import toast from 'react-hot-toast'
 
   
@@ -15,7 +24,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
   const user = authUser || {}
 
   // Tab control and active step states
-  const [activeTab, setActiveTab] = useState('profile') // 'profile' or 'security'
+  const [activeTab, setActiveTab] = useState('profile') // 'profile' | 'security' | 'devices'
   const [isEditingProfile, setIsEditingProfile] = useState(false)
   
   // 📝 Initialize blank profile form states to avoid dynamic reading issues on mount
@@ -40,6 +49,13 @@ const SettingsModal = ({ isOpen, onClose }) => {
   
   const inputRefs = [useRef(), useRef(), useRef(), useRef(), useRef(), useRef()]
 
+  // 📱 Fetch Active Device Sessions using TanStack Query React Hooks
+  const { data: sessionsData, isLoading: isLoadingSessions } = useQuery({
+    queryKey: ["userSessions"],
+    queryFn: getUserSessions,
+    enabled: isOpen && activeTab === 'devices',
+  })
+
   // 2. Sync profile data into form states inside an isolated useEffect lifecycle hook
   useEffect(() => {
     if (user && isOpen) {
@@ -58,10 +74,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
 
   // 3. Mutation Layers (Always rendering uniformly)
   const updateProfileMutation = useMutation({
-    mutationFn: async (payload) => {
-      const res = await axiosInstance.put('/auth/update-profile', payload)
-      return res.data
-    },
+    mutationFn: updateProfile,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["authUser"] })
       toast.success("Profile updated successfully!")
@@ -73,10 +86,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
   })
 
   const requestOtpMutation = useMutation({
-    mutationFn: async () => {
-      const res = await axiosInstance.post('/auth/request-password-otp', { email: user.email })
-      return res.data
-    },
+    mutationFn: () => requestPasswordOTP({ email: user.email }),
     onSuccess: () => {
       toast.success("Verification OTP code sent to your email!")
       setSecurityStep('verify_otp')
@@ -87,14 +97,11 @@ const SettingsModal = ({ isOpen, onClose }) => {
   })
 
   const updatePasswordMutation = useMutation({
-    mutationFn: async () => {
-      const res = await axiosInstance.post('/auth/update-password', {
-        userId: user._id,
-        otp: otpDigits.join(""),
-        newPassword: newPassword
-      })
-      return res.data
-    },
+    mutationFn: () => resetPassword({
+      email: user.email,
+      otp: otpDigits.join(""),
+      newPassword: newPassword
+    }),
     onSuccess: () => {
       toast.success("Password updated successfully!")
       setSecurityStep('request')
@@ -134,6 +141,33 @@ const SettingsModal = ({ isOpen, onClose }) => {
     }
   })
 
+  // 📱 Revoke Single Target Device Session Mutation Layer
+  const revokeSessionMutation = useMutation({
+    mutationFn: logoutSpecificDevice,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["userSessions"] })
+      toast.success("Target device session revoked successfully.")
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || "Failed to terminate remote session.")
+    }
+  })
+
+  // 💥 Mass Logout Devices Mutation Layer
+  const massLogoutMutation = useMutation({
+    mutationFn: logoutAllDevices,
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["userSessions"] })
+      toast.success(data.message || "Action executed cleanly.")
+      if (data.loggedOutEverywhere) {
+        setTimeout(() => { window.location.href = "/login" }, 1000)
+      }
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || "Mass logout action aborted.")
+    }
+  })
+
   // 4. Handlers
   const handleImageUpload = (e) => {
     const file = e.target.files[0]
@@ -166,12 +200,19 @@ const SettingsModal = ({ isOpen, onClose }) => {
     }
   }
 
+  // Helper helper utility to display correct icon per session device layout context
+  const getDeviceIcon = (deviceType = "") => {
+    const lower = deviceType.toLowerCase();
+    if (lower.includes("mobile") || lower.includes("phone")) return <Smartphone className="size-5 text-primary" />;
+    if (lower.includes("tablet")) return <Smartphone className="size-5 text-accent" />;
+    if (lower.includes("desktop")) return <Monitor className="size-5 text-info" />;
+    return <Laptop className="size-5 text-base-content/70" />;
+  }
+
   if (!isOpen) return null
   const cleanAvatar = editForm.profilePic?.startsWith("data:image") 
     ? editForm.profilePic
     : user.profilePic || "/avatar.png"
-
-
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
@@ -213,7 +254,21 @@ const SettingsModal = ({ isOpen, onClose }) => {
             }`}
           >
             <KeyRound className="size-4 flex-shrink-0" />
-            <span className="whitespace-nowrap">Security Management</span>
+            <span className="whitespace-nowrap">Password Security</span>
+          </button>
+
+          {/* 📱 NEW DEVICE MANAGEMENT TAB INTEGRATED BUTTON */}
+          <button 
+            type="button"
+            onClick={() => setActiveTab('devices')}
+            className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200 w-full flex-1 ${
+              activeTab === 'devices' 
+                ? 'bg-base-100 text-primary shadow-xs border border-base-300/30' 
+                : 'text-base-content/60 hover:text-base-content hover:bg-base-200'
+            }`}
+          >
+            <Smartphone className="size-4 flex-shrink-0" />
+            <span className="whitespace-nowrap">Active Devices</span>
           </button>
         </div>
 
@@ -314,9 +369,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
 
                     <div className="space-y-3">
                       
-                      {/* ============================================== */}
-                      {/* SUB-ITEM 1: DEACTIVATE ACCOUNT LAYOUT          */}
-                      {/* ============================================== */}
+                      {/* SUB-ITEM 1: DEACTIVATE ACCOUNT LAYOUT */}
                       <div className="p-4 bg-base-200/60 rounded-2xl border border-base-300/70 transition-all">
                         {!confirmDeactivate ? (
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -389,9 +442,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
                         )}
                       </div>
 
-                      {/* ============================================== */}
-                      {/* SUB-ITEM 2: PERMANENT DELETION WIPE LAYOUT     */}
-                      {/* ============================================== */}
+                      {/* SUB-ITEM 2: PERMANENT DELETION WIPE LAYOUT */}
                       <div className="p-4 bg-error/5 rounded-2xl border border-error/20 transition-all">
                         {!confirmDelete ? (
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -577,6 +628,106 @@ const SettingsModal = ({ isOpen, onClose }) => {
                 </form>
               )}
 
+            </div>
+          )}
+
+          {/* 📱 TAB 3: NEW ACTIVE SESSIONS & DEVICE MANAGEMENT HUB */}
+          {activeTab === 'devices' && (
+            <div className="space-y-4 text-left animate-fadeIn">
+              <div className="flex items-center justify-between border-b border-base-300 pb-2">
+                <div>
+                  <h4 className="text-sm font-bold text-base-content">Logged-in Devices</h4>
+                  <p className="text-[11px] text-base-content/60 leading-normal">Monitor and manage access across your web and mobile application instances.</p>
+                </div>
+                <button 
+                  type="button"
+                  disabled={massLogoutMutation.isPending || isLoadingSessions || !sessionsData?.sessions?.length}
+                  onClick={() => massLogoutMutation.mutate(false)}
+                  className="btn btn-outline btn-error btn-xs rounded-lg font-bold"
+                >
+                  Logout Other Devices
+                </button>
+              </div>
+
+              {isLoadingSessions ? (
+                <div className="py-8 text-center flex flex-col items-center gap-2">
+                  <span className="loading loading-spinner loading-md text-primary"></span>
+                  <p className="text-xs text-base-content/50">Querying active network tokens...</p>
+                </div>
+              ) : sessionsData?.sessions && sessionsData.sessions.length > 0 ? (
+                <div className="space-y-2.5 max-h-[40vh] overflow-y-auto pr-1 custom-scrollbar">
+                  {sessionsData.sessions.map((session) => (
+                    <div 
+                      key={session.sessionId} 
+                      className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 transition-all ${
+                        session.isCurrentDevice 
+                          ? 'bg-primary/5 border-primary/30 ring-1 ring-primary/10' 
+                          : 'bg-base-200/70 border-base-300 hover:bg-base-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 truncate">
+                        <div className="p-2 bg-base-100 rounded-xl border border-base-300 shadow-xs flex-shrink-0">
+                          {getDeviceIcon(session.deviceType)}
+                        </div>
+                        <div className="truncate text-left">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs font-bold text-base-content">
+                              {session.os || "Unknown System Architecture"}
+                            </span>
+                            {session.isCurrentDevice && (
+                              <span className="badge badge-primary text-[9px] font-extrabold h-4 px-1.5 uppercase tracking-wide">
+                                This Device
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] opacity-60 truncate mt-0.5 font-medium">
+                            {session.browser || "System Client"} • <span className="font-mono text-[10px]">{session.ipAddress}</span>
+                          </p>
+                          <p className="text-[9px] text-base-content/40 mt-0.5">
+                            Authenticated: {new Date(session.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      </div>
+
+                      {!session.isCurrentDevice && (
+                        <button
+                          type="button"
+                          disabled={revokeSessionMutation.isPending}
+                          onClick={() => revokeSessionMutation.mutate(session.sessionId)}
+                          className="btn btn-ghost btn-circle btn-xs text-error/70 hover:bg-error/10 hover:text-error flex-shrink-0"
+                          title="Revoke session"
+                        >
+                          <X className="size-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-8 bg-base-200 rounded-2xl text-center border border-dashed border-base-300">
+                  <HelpCircle className="size-8 mx-auto text-base-content/30 mb-2" />
+                  <p className="text-xs font-semibold text-base-content/60">No distinct multi-device session entries indexed.</p>
+                </div>
+              )}
+
+              <div className="bg-error/5 border border-error/20 p-3 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-2">
+                <div className="text-left">
+                  <p className="text-xs font-bold text-error">Nuke Active Session Logs</p>
+                  <p className="text-[10px] text-base-content/60 leading-normal">Emergency disconnect covering every device node simultaneously, dropping active browser cookies globally.</p>
+                </div>
+                <button
+                  type="button"
+                  disabled={massLogoutMutation.isPending}
+                  onClick={() => {
+                    if(window.confirm("Are you absolutely sure you want to terminate all sessions? You will be logged out of this device instantly.")) {
+                      massLogoutMutation.mutate(true);
+                    }
+                  }}
+                  className="btn btn-error btn-xs font-black text-white px-3 self-end sm:self-auto shadow-xs"
+                >
+                  Logout Everywhere
+                </button>
+              </div>
             </div>
           )}
 

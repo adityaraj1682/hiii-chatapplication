@@ -8,6 +8,7 @@ import { OAuth2Client } from "google-auth-library";
 import crypto from "crypto";       // 🔒 Added for crypto secure OTP strings
 import nodemailer from "nodemailer"; // 📧 Added for email dispatches
 import { validate as validateEmailExistence } from "deep-email-validator";
+import { UAParser } from "ua-parser-js"; // 📱 Added for user-agent parsing
 
 dotenv.config();
 
@@ -19,18 +20,14 @@ const imagekit = new ImageKit({
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-
 const mailTransporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: process.env.EMAIL_USER, // 
+    user: process.env.EMAIL_USER, 
     pass: process.env.EMAIL_PASS, // Your 16-character Google App Password
   },
 });
 
-/**
- * Helper function to generate 6-digit OTP, save to DB, and mail to user
- */
 async function generateAndSendOTP(user, res, messageSuccess, isBrandNewUser = false) {
   try {
     const otp = crypto.randomInt(100000, 999999).toString();
@@ -59,7 +56,6 @@ async function generateAndSendOTP(user, res, messageSuccess, isBrandNewUser = fa
     // Attempt email delivery
     await mailTransporter.sendMail(mailOptions);
     
-    // 💡 Dispatch Succeeded! Return the expected 200 response and end request context cleanly
     return res.status(200).json({ 
       step: "REQUIRE_OTP", 
       userId: user._id, 
@@ -70,7 +66,6 @@ async function generateAndSendOTP(user, res, messageSuccess, isBrandNewUser = fa
     console.error("❌ Mail dispatch failed or crashed during execution pipeline:", error.message);
     
     try {
-      // 🧹 HOUSEKEEPING CLEANUP: Prevent hanging processes
       if (isBrandNewUser) {
         await userModel.findByIdAndDelete(user._id);
       } else {
@@ -82,7 +77,6 @@ async function generateAndSendOTP(user, res, messageSuccess, isBrandNewUser = fa
       console.error("❌ Failed to perform cleanup database operation:", dbError.message);
     }
 
-    // 💡 Explicitly return the response here so Express shuts down the connection gracefully without crashing
     return res.status(502).json({ 
       message: "Email delivery failed. The email service rejected the message or address domain." 
     });
@@ -103,14 +97,13 @@ export async function signup(req, res) {
         const emailCheck = await validateEmailExistence({
                 email: email,
                 validateRegex: true,
-                validateMx: true,      // Keeps checking if the domain is real (e.g., gmail.com)
-                validateTypo: true,    // Keeps catching typos
-                validateDisposable: true, // Blocks spam temp emails
-                validateSMTP: false     // 🛠️ CHANGED TO FALSE: Stops checking the exact mailbox to prevent Render network blockages
+                validateMx: true,      
+                validateTypo: true,    
+                validateDisposable: true, 
+                validateSMTP: false     
             });
 
         if (!emailCheck.valid) {
-            // Determine a clean, descriptive message for the user based on why it failed
             let customReason = "The email address specified does not exist or is unreachable.";
             
             if (emailCheck.reason === "typo") customReason = "It looks like you made a typo in your email address domain.";
@@ -120,7 +113,6 @@ export async function signup(req, res) {
             return res.status(400).json({ message: customReason });
         } 
 
-        // Check if user exists
         let existingUser = await userModel.findOne({ email });
         if (existingUser) {
             if (existingUser.isVerified) {
@@ -131,17 +123,14 @@ export async function signup(req, res) {
             existingUser.password = password; 
             await existingUser.save();
             
-            // Pass false for isBrandNewUser because the entry already exists in DB
             await generateAndSendOTP(existingUser, res, "Signup initiated. Verification OTP re-sent.", false);
         } else {
-            // Create fresh unverified user stub
             const newUser = await userModel.create({
                 email,
                 fullName,
                 password 
             });
 
-            // 🌟 📥 Pass true for isBrandNewUser here so if the email fails, it deletes the fresh DB entry!
             await generateAndSendOTP(newUser, res, "Signup initiated. Verification OTP sent.", true);
         }
 
@@ -165,38 +154,55 @@ export async function login(req, res) {
         const isPasswordCorrect = await user.matchPassword(password);
         if (!isPasswordCorrect) return res.status(401).json({ message: "Invalid email or password" });
 
-        // ⏱️ 7-DAY CONDITIONAL SECURITY CHECK
         let requireOTP = false;
-        
         console.log("DEBUG -> user.lastLogoutAt:", user.lastLogoutAt);
 
         if (user.lastLogoutAt) {
-            // Create a strict boundary marker exactly 7 days ago in the past
             const sevenDaysAgo = new Date();
             sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
             console.log("DEBUG -> 7 Days Ago Date Boundary:", sevenDaysAgo);
 
-            // If their last logout timestamp is older than our 7-day past boundary line
             if (user.lastLogoutAt < sevenDaysAgo) {
-                requireOTP = true; // 🚨 Inactivity has crossed 7 days! Force an OTP challenge.
+                requireOTP = true; 
             }
         } else {
-            // 🚀 THE BREAKOUT FIX: If lastLogoutAt is undefined or null, give a one-time "Fast Pass".
-            // Once they hit the logout button, the new protected route saves the date, and tracking works perfectly!
             requireOTP = false;
         }
 
         if (requireOTP) {
-            // 📥 Route through your OTP verification challenge pipeline
             console.log(`🔒 Security: Generating login OTP challenge for ${user.email} (Inactive > 7 days)`);
             return await generateAndSendOTP(user, res, "Login challenge. Security OTP sent.");
         } else {
-            // 🔓 Fast-track login: Skip OTP entirely, sign their token, and log them in smoothly
             console.log(`⚡ Fast-Pass: User was active within the 7-day window. Skipping OTP requirement.`);
             
-            // 🚀 FIXED: Generate and attach the session JWT cookie inline here natively!
-            const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET_KEY, {
+            // 📱 SESSIONS TRACKING STRUCTURING WITH UA-PARSER
+            const parser = new UAParser(req.headers['user-agent']);
+            const uaResult = parser.getResult();
+            const deviceType = uaResult.device.type || "Desktop";
+            const os = `${uaResult.os.name || "Unknown OS"} ${uaResult.os.version || ""}`.trim();
+            const browser = `${uaResult.browser.name || "Unknown Browser"} ${uaResult.browser.version || ""}`.trim();
+            const ipAddress = req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || "0.0.0.0";
+            const tokenVersion = crypto.randomBytes(16).toString("hex");
+
+            if (!user.sessions) {
+                user.sessions = [];
+            }
+
+            // 🚀 FIXED: Removed the broken duplicate block and used uniform properties with a clean fallback ID string mapping wrapper
+            user.sessions.push({
+                _id: crypto.randomUUID(), // Safe identification generation
+                tokenVersion,
+                deviceType,
+                os,
+                browser,
+                ipAddress,
+                createdAt: new Date()
+            });
+
+            await user.save();
+
+            const token = jwt.sign({ userId: user._id, tokenVersion }, process.env.JWT_SECRET_KEY, {
                 expiresIn: "2d"
             });
 
@@ -210,7 +216,7 @@ export async function login(req, res) {
             return res.status(200).json({
                 success: true,
                 _id: user._id,
-                fullName: user.fullName, // Synced to match your frontend signup schema strings
+                fullName: user.fullName, 
                 email: user.email,
                 profilePic: user.profilePic,
                 message: "Logged in successfully (OTP skipped)"
@@ -223,19 +229,15 @@ export async function login(req, res) {
     }
 }
 
-// 🚀 NEW CONTROLLER: THE ACTUAL JWT GATEWAY ONCE OTP IS VALIDATED
-// 📄 Location: backend/controllers/auth.controller.js
 export async function verifyOTP(req, res) {
     try {
-      console.log("📥 RECEIVED BODY:", req.body);
-        // 💡 CHANGE: Accept email directly from req.body as our bulletproof fallback anchor
+        console.log("📥 RECEIVED BODY:", req.body);
         const { userId, email, otp } = req.body;
 
         if (!otp || (!userId && !email)) {
             return res.status(400).json({ message: "Missing required verification data" });
         }
 
-        // 💡 LOOKUP FIX: Find user by email if userId wasn't preserved by frontend states
         let user;
         if (userId) {
             user = await userModel.findById(userId);
@@ -243,15 +245,16 @@ export async function verifyOTP(req, res) {
         if (!user && email) {
             user = await userModel.findOne({ email });
         }
+        
         console.log("🔍 MONGO DB DATA:", {
             foundUser: !!user,
             savedOtpCode: user?.otpCode,
             submittedOtpCode: otp,
             hasExpired: user ? (new Date() > user.otpExpiresAt) : null
         });
+        
         if (!user) return res.status(404).json({ message: "User session expired or account not found" });
 
-        // Validate code matches records
         if (!user.otpCode || user.otpCode !== otp) {
             return res.status(400).json({ message: "Invalid verification code" });
         }
@@ -260,13 +263,34 @@ export async function verifyOTP(req, res) {
             return res.status(400).json({ message: "OTP has expired. Please request a new one" });
         }
 
-        // Clean verification tracks on success
         user.otpCode = null;
         user.otpExpiresAt = null;
         user.isVerified = true; 
+
+        // 📱 SESSIONS TRACKING STRUCTURING WITH UA-PARSER
+        const parser = new UAParser(req.headers['user-agent']);
+        const uaResult = parser.getResult();
+        const deviceType = uaResult.device.type || "Desktop";
+        const os = `${uaResult.os.name || "Unknown OS"} ${uaResult.os.version || ""}`.trim();
+        const browser = `${uaResult.browser.name || "Unknown Browser"} ${uaResult.browser.version || ""}`.trim();
+        const ipAddress = req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || "0.0.0.0";
+        const tokenVersion = crypto.randomBytes(16).toString("hex");
+
+        if (!user.sessions) {
+            user.sessions = [];
+        }
+
+        user.sessions.push({
+            _id: crypto.randomUUID(),
+            tokenVersion,
+            deviceType,
+            os,
+            browser,
+            ipAddress,
+            createdAt: new Date()
+        });
         await user.save();
 
-        // Synced Stream Registration
         try {
             await upsertStreamUser({
                 id: user._id.toString(),
@@ -277,8 +301,7 @@ export async function verifyOTP(req, res) {
             console.log('Stream sync skipped or failed:', streamErr.message);
         }
 
-        // Sign session token securely
-        const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET_KEY, {
+        const token = jwt.sign({ userId: user._id, tokenVersion }, process.env.JWT_SECRET_KEY, {
             expiresIn: "2d"
         });
 
@@ -300,16 +323,18 @@ export async function verifyOTP(req, res) {
 export async function logout(req, res) {
     try {
         if (req.user?._id) {
-            // Write the exact timestamp right into the user record
+            const currentTokenVersion = req.tokenPayload?.tokenVersion || req.userTokenVersion; 
+            
             await userModel.findByIdAndUpdate(req.user._id, {
-                lastLogoutAt: new Date()
+                lastLogoutAt: new Date(),
+                $pull: { sessions: { tokenVersion: currentTokenVersion } }
             });
-            console.log(`🧼 SUCCESS -> Stamped lastLogoutAt for user: ${req.user.email}`);
+            console.log(`🧼 SUCCESS -> Stamped lastLogoutAt and pulled current session for user: ${req.user.email}`);
         } else {
             console.log("❌ ERROR -> req.user._id is missing! Is this route protected?");
         }
 
-        res.clearCookie("jwt"); // Clears auth tokens cleanly
+        res.clearCookie("jwt"); 
         return res.status(200).json({ message: "Logged out successfully" });
     } catch (error) {
         console.log("Error in logout controller:", error.message);
@@ -413,7 +438,6 @@ export async function googleAuth(req, res) {
         });
 
         const { name, email, picture } = ticket.getPayload();
-
         let user = await userModel.findOne({ email });
 
         if (!user) {
@@ -429,7 +453,7 @@ export async function googleAuth(req, res) {
                 password: hashedPassword,
                 profilePic: picture || "",
                 isOnboarded: false,
-                isVerified: true // Google accounts are pre-verified via Google OAuth, no OTP challenge needed
+                isVerified: true 
             });
 
             await upsertStreamUser({
@@ -440,7 +464,30 @@ export async function googleAuth(req, res) {
             console.log(`Stream account initialized for Google User: ${user.fullName}`);
         }
 
-        const sessionToken = jwt.sign({ userId: user._id }, process.env.JWT_SECRET_KEY, {
+        const parser = new UAParser(req.headers['user-agent']);
+        const uaResult = parser.getResult();
+        const deviceType = uaResult.device.type || "Desktop";
+        const os = `${uaResult.os.name || "Unknown OS"} ${uaResult.os.version || ""}`.trim();
+        const browser = `${uaResult.browser.name || "Unknown Browser"} ${uaResult.browser.version || ""}`.trim();
+        const ipAddress = req.headers['x-forwarded-for'] || req.socket.remoteAddress || "0.0.0.0";
+        const tokenVersion = crypto.randomBytes(16).toString("hex");
+
+        if (!user.sessions) {
+            user.sessions = [];
+        }
+
+        user.sessions.push({
+            _id: crypto.randomUUID(),
+            tokenVersion,
+            deviceType,
+            os,
+            browser,
+            ipAddress,
+            createdAt: new Date()
+        });
+        await user.save();
+
+        const sessionToken = jwt.sign({ userId: user._id, tokenVersion }, process.env.JWT_SECRET_KEY, {
             expiresIn: "2d"
         });
 
@@ -459,14 +506,6 @@ export async function googleAuth(req, res) {
     }
 }
 
-// 📄 Append this code directly into your: src/controllers/auth.controller.js
-
-/**
- * 🔒 1. REQUEST PASSWORD RESET OTP
- * Generates a 6-digit OTP code and dispatches it safely to the logged-in user's email.
- */
-// 📄 Location: src/controllers/auth.controller.js
-
 export async function requestPasswordOtp(req, res) {
     try {
         const { email } = req.body;
@@ -480,7 +519,6 @@ export async function requestPasswordOtp(req, res) {
             return res.status(404).json({ message: "No active user account found with this email" });
         }
 
-        // Generate the 6-digit code string
         const otp = crypto.randomInt(100000, 999999).toString();
         
         user.otpCode = otp;
@@ -488,7 +526,7 @@ export async function requestPasswordOtp(req, res) {
         await user.save();
 
         const mailOptions = {
-            from: '"HiiiChat Security" <aditya@iic.ac.in>',
+            from: `"HiiiChat Security" <${process.env.EMAIL_USER}>`,
             to: user.email,
             subject: "🔑 Security Check: Password Modification Request Token",
             html: `
@@ -502,13 +540,11 @@ export async function requestPasswordOtp(req, res) {
             `,
         };
 
-        // 🌟 THE FIX: Wrap the mail dispatcher in an isolated try/catch block
         try {
             await mailTransporter.sendMail(mailOptions);
         } catch (mailError) {
             console.error("❌ SMTP Mail Delivery Rejection Failure:", mailError.message);
             
-            // Clean up the OTP database entries since the email failed to send
             user.otpCode = null;
             user.otpExpiresAt = null;
             await user.save();
@@ -525,14 +561,9 @@ export async function requestPasswordOtp(req, res) {
         return res.status(500).json({ message: "Internal server engine tracking error." });
     }
 }
-/**
- * 🔑 2. UPDATE PASSWORD IN DATABASE
- * Confirms OTP token identity, then updates and cryptographically hashes the fresh user password string.
- */
-// 📄 Location: backend/controllers/auth.controller.js
+
 export async function updatePassword(req, res) {
     try {
-        // 💡 CHANGE: Destructure 'email' along with 'userId'
         const { userId, email, otp, newPassword } = req.body;
 
         if (!otp || !newPassword || (!userId && !email)) {
@@ -543,7 +574,6 @@ export async function updatePassword(req, res) {
             return res.status(400).json({ message: "Password secret parameter must be at least 6 characters long" });
         }
 
-        // 💡 LOOKUP FIX: Find user by email if userId wasn't preserved by frontend states
         let user;
         if (userId) {
             user = await userModel.findById(userId);
@@ -554,19 +584,15 @@ export async function updatePassword(req, res) {
 
         if (!user) return res.status(404).json({ message: "User session node context expired or not found" });
 
-        // Confirm token matches records safely
         if (!user.otpCode || user.otpCode !== otp) {
             return res.status(400).json({ message: "Invalid verification code signature entry" });
         }
 
-        // Validate expiration timestamp bounds
         if (new Date() > user.otpExpiresAt) {
             return res.status(400).json({ message: "Verification session token has completely expired" });
         }
 
         user.password = newPassword;
-
-        // Clear verification tracks clean
         user.otpCode = null;
         user.otpExpiresAt = null;
         await user.save();
@@ -579,13 +605,8 @@ export async function updatePassword(req, res) {
     }
 }
 
-/**
- * 📝 3. UPDATE USER PROFILE (ImageKit integrated CDN syncing)
- * Takes edited text fields and handles Base64 data uploads directly into your media bucket asset folder pipelines.
- */
 export async function updateProfile(req, res) {
     try {
-        // Grab authenticated user parameter references populated directly from your custom protection router middleware hook line!
         const userId = req.user._id; 
         const { fullName, bio, profilePic } = req.body;
 
@@ -593,9 +614,8 @@ export async function updateProfile(req, res) {
             return res.status(400).json({ message: "Profile naming configurations are required" });
         }
 
-        let imageUrl = profilePic; // Keep existing pointer link address default 
+        let imageUrl = profilePic; 
 
-        // Check if user uploaded a fresh base64 picture text string data stream block inside the browser workspace layout
         if (profilePic && profilePic.startsWith("data:image/")) {
             console.log("Fresh base64 string stream tracked inside updateProfile. Syncing with ImageKit cloud gateway...");
             try {
@@ -604,21 +624,19 @@ export async function updateProfile(req, res) {
                     fileName: `avatar_update_${userId}_${Date.now()}.png`,
                     folder: "/user_profiles",
                 });
-                imageUrl = uploadResponse.url; // Overwrite default base64 file with direct clean CDN tracking url link string parameter
+                imageUrl = uploadResponse.url; 
             } catch (ikError) {
                 console.error("ImageKit compilation sync fault:", ikError.message);
                 return res.status(500).json({ message: "Failed syncing image media stream assets to clouds storage" });
             }
         }
 
-        // Write fresh tracking data records straight into MongoDB rows
         const updatedUser = await userModel.findByIdAndUpdate(
             userId,
             { fullName, bio, profilePic: imageUrl },
-            { new: true } // Returns freshly formatted model values arrays instantly on save callback line completion
+            { new: true } 
         );
 
-        // Keep Stream video/chat servers metadata synced perfectly
         try {
             await upsertStreamUser({
                 id: updatedUser._id.toString(),
@@ -639,7 +657,6 @@ export async function updateProfile(req, res) {
     }
 }
 
-// 🔒 Upgraded Account Deactivation with Security Verification
 export async function deactivateAccount(req, res) {
     try {
         const userId = req.user._id;
@@ -649,27 +666,21 @@ export async function deactivateAccount(req, res) {
             return res.status(400).json({ message: "Password validation token is required" });
         }
 
-        // Fetch the user with password field explicitly included for evaluation
         const user = await userModel.findById(userId).select("+password");
         if (!user) return res.status(404).json({ message: "User not found" });
 
-        // 🔐 Security Verification Check
         const isPasswordCorrect = await user.matchPassword(password);
         if (!isPasswordCorrect) {
             return res.status(401).json({ message: "Incorrect password credentials" });
         }
 
-        // Optional: Save feedback reason to DB if you add a feedback string field to your model schema, 
-        // otherwise we print it directly to backend telemetry streams logs:
         console.log(`⚠️ User ${user.email} deactivating profile. Feedback Reason: "${reason || "None specified"}"`);
 
-        // Execute the deactivation
         user.isDeactivated = true;
         user.deactivatedAt = new Date();
-        user.location = null; // Wipe location from map discovery
+        user.location = null; 
         await user.save();
 
-        // Hide them instantly from their friends' app views on Stream Chat
         await deactivateStreamUser(userId.toString());
 
         res.clearCookie("jwt");
@@ -680,7 +691,6 @@ export async function deactivateAccount(req, res) {
     }
 }
 
-// 🚨 Upgraded Permanent Account Destruction with Security Verification
 export async function deleteAccount(req, res) {
     try {
         const userId = req.user._id;
@@ -693,24 +703,91 @@ export async function deleteAccount(req, res) {
         const user = await userModel.findById(userId).select("+password");
         if (!user) return res.status(404).json({ message: "User not found" });
 
-        // 🔐 Security Verification Check
         const isPasswordCorrect = await user.matchPassword(password);
         if (!isPasswordCorrect) {
             return res.status(401).json({ message: "Incorrect password credentials" });
         }
-
         console.log(`🚨 CRITICAL: User ${user.email} requested PERMANENT WIPE. Reason: "${reason || "None specified"}"`);
-
-        // Wipe user from Stream Chat completely using our clean infrastructure utility
+        
         await deleteStreamUser(userId.toString());
-
-        // Delete from MongoDB
         await userModel.findByIdAndDelete(userId);
-
         res.clearCookie("jwt");
         return res.status(200).json({ success: true, message: "Account data permanently erased." });
     } catch (error) {
         console.error("Error in deleteAccount controller:", error.message);
         return res.status(500).json({ message: "Internal Server Error" });
+    }
+}
+
+export async function getActiveSessions(req, res) {
+    try {
+        const user = await userModel.findById(req.user._id).select("sessions");
+        if (!user) return res.status(404).json({ message: "User not found" });
+        
+        const currentSessionTokenVersion = req.tokenPayload?.tokenVersion || req.userTokenVersion;
+
+        const formattedSessions = (user.sessions || []).map(session => ({
+            sessionId: session._id || session.tokenVersion, // Safe ID fallback mechanism for structural identification UI keys
+            deviceType: session.deviceType,
+            os: session.os,
+            browser: session.browser,
+            ipAddress: session.ipAddress,
+            createdAt: session.createdAt,
+            isCurrentDevice: session.tokenVersion === currentSessionTokenVersion
+        }));
+        return res.status(200).json({ success: true, sessions: formattedSessions });
+    } catch (error) {
+        console.error("Error fetching active sessions:", error.message);
+        return res.status(500).json({ message: "Internal server error fetching active sessions" });
+    }
+}
+
+// 📄 PART 2 LOGIC MERGED INTEGRATION:
+export async function logoutSpecificDevice(req, res) {
+    try {
+        const { sessionId } = req.body; 
+        if (!sessionId) return res.status(400).json({ message: "Session identifier token required" });
+
+        const user = await userModel.findById(req.user._id);
+        if (!user) return res.status(404).json({ message: "User profile not found" });
+
+        // Dual-property match filter verification backup strategy (checks database subdocument ID or unique string keys fallback matching safely)
+        user.sessions = (user.sessions || []).filter(session => 
+            (session._id && session._id.toString() !== sessionId) && 
+            (session.tokenVersion !== sessionId)
+        );
+        await user.save();
+
+        return res.status(200).json({ success: true, message: "Target device session revoked successfully." });
+    } catch (error) {
+        console.error("Error revoking target device session:", error.message);
+        return res.status(500).json({ message: "Internal server error revoking session" });
+    }
+}
+
+export async function logoutAllDevices(req, res) {
+    try {
+        const { includeCurrentDevice } = req.body; 
+        const user = await userModel.findById(req.user._id);
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        if (includeCurrentDevice === true) {
+            user.sessions = [];
+            user.lastLogoutAt = new Date();
+            await user.save();
+
+            res.clearCookie("jwt");
+            return res.status(200).json({ success: true, loggedOutEverywhere: true, message: "All devices terminated completely." });
+        } else {
+            const currentSessionTokenVersion = req.tokenPayload?.tokenVersion || req.userTokenVersion;
+            
+            user.sessions = (user.sessions || []).filter(session => session.tokenVersion === currentSessionTokenVersion);
+            await user.save();
+
+            return res.status(200).json({ success: true, loggedOutEverywhere: false, message: "Logged out of all other remote device profiles cleanly." });
+        }
+    } catch (error) {
+        console.error("Error processing mass session cleanup:", error.message);
+        return res.status(500).json({ message: "Internal server mass logout processing error" });
     }
 }

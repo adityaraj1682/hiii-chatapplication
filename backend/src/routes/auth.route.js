@@ -1,7 +1,6 @@
 import express from 'express'
-import { login, logout, verifyOTP,onboard, signup, googleAuth,requestPasswordOtp, updatePassword, updateProfile,deactivateAccount, deleteAccount } from '../controllers/auth.controller.js'
+import { login, logout, verifyOTP,onboard, signup, googleAuth,requestPasswordOtp, updatePassword, updateProfile,deactivateAccount, deleteAccount, getActiveSessions, logoutAllDevices, logoutSpecificDevice } from '../controllers/auth.controller.js'
 import { protectRoute } from '../middleware/auth.middleware.js'
-
 const router = express.Router()
 
 router.post('/signup',signup)
@@ -17,6 +16,9 @@ router.post("/update-password", updatePassword);
 router.put("/update-profile", protectRoute, updateProfile);
 router.post("/deactivate", protectRoute, deactivateAccount);
 router.delete("/delete-account", protectRoute, deleteAccount);
+router.get("/sessions", protectRoute, getActiveSessions);
+router.post("/sessions/logout-device", protectRoute, logoutSpecificDevice);
+router.post("/sessions/logout-all", protectRoute, logoutAllDevices);
 router.get('/me',protectRoute,(req,res)=>{
     res.status(200).json({success: true, user: req.user})
 }) 

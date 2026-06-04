@@ -177,3 +177,26 @@ export const queryChatbot = async (conversationHistory) => {
   const response = await axiosInstance.post("/chat/chatbot/ask", { messages: conversationHistory });
   return response.data;
 };
+
+export const getUserSessions = async () => {
+  const response = await axiosInstance.get("/auth/sessions");
+  return response.data;
+};
+
+/**
+ * Remotely logs out a specific device session via its sessionId
+ * @param {string} sessionId 
+ */
+export const logoutSpecificDevice = async (sessionId) => {
+  const response = await axiosInstance.post("/auth/sessions/logout-device", { sessionId });
+  return response.data;
+};
+
+/**
+ * Mass log out handler tool
+ * @param {boolean} includeCurrentDevice - True logs out everywhere, False logs out other devices only
+ */
+export const logoutAllDevices = async (includeCurrentDevice = false) => {
+  const response = await axiosInstance.post("/auth/sessions/logout-all", { includeCurrentDevice });
+  return response.data;
+};

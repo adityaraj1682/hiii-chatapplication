@@ -435,7 +435,7 @@ export default function HomePage() {
       {/* ========================================== */}
       {/* 🔥 NEW: FLOATING WHATSAPP-STYLE CHATBOT    */}
       {/* ========================================== */}
-      <div className="fixed bottom-6 right-6 z-40">
+      <div className="fixed bottom-16 right-6 z-40 sm:bottom-6">
         {/* Toggle FAB Circular Button Trigger */}
         {!isChatOpen && (
           <button 
