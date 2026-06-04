@@ -7,7 +7,7 @@ import ImageKit from "imagekit";
 import { OAuth2Client } from "google-auth-library";
 import crypto from "crypto";       // 🔒 Added for crypto secure OTP strings
 import nodemailer from "nodemailer"; // 📧 Added for email dispatches
-import { validate as validateEmailExistence } from "deep-email-validator";
+import validator from 'validator';
 import { UAParser } from "ua-parser-js"; // 📱 Added for user-agent parsing
 
 dotenv.config();
@@ -94,24 +94,9 @@ export async function signup(req, res) {
             return res.status(400).json({ message: "Password must be at least 6 characters" });
         }
 
-        const emailCheck = await validateEmailExistence({
-                email: email,
-                validateRegex: true,
-                validateMx: true,      
-                validateTypo: true,    
-                validateDisposable: true, 
-                validateSMTP: false     
-            });
-
-        if (!emailCheck.valid) {
-            let customReason = "The email address specified does not exist or is unreachable.";
-            
-            if (emailCheck.reason === "typo") customReason = "It looks like you made a typo in your email address domain.";
-            if (emailCheck.reason === "disposable") customReason = "Disposable/temporary spam emails are not allowed.";
-            if (emailCheck.reason === "regex") customReason = "Invalid email format structure.";
-
-            return res.status(400).json({ message: customReason });
-        } 
+        if (!validator.isEmail(email)) {
+        return res.status(400).json({ message: "Invalid email format structure." });
+        }
 
         let existingUser = await userModel.findOne({ email });
         if (existingUser) {

@@ -51,23 +51,32 @@ export async function createPost(req, res) {
         }
         let imageUrl = "";
 
-        if (postImage && postImage.startsWith("data:image/")) {
-            console.log("Valid Base64 post image payload detected. Syncing with ImageKit...");
-            try {
-                const uploadResponse = await imagekit.upload({
-                    file: postImage, 
-                    fileName: `post_${userId}_${Date.now()}.png`,
-                    folder: "/user_posts",
-                });
-                imageUrl = uploadResponse.url;
-                console.log("ImageKit post upload successful! URL:", imageUrl);
-            } catch (ikError) {
-                console.error("ImageKit Post Upload Failure Details:", ikError);
-                return res.status(500).json({ 
-                    message: "Post image cloud sync failed. Please check backend .env API keys." 
-                });
-            }
-        }
+         if (profilePic && profilePic.startsWith("data:image/")) {
+        console.log("Valid Base64 image payload detected. Syncing with ImageKit...");
+      
+         try {
+        const uploadResponse = await imagekit.upload({
+          file: profilePic, 
+          fileName: `avatar_${userId}_${Date.now()}.png`,
+          folder: "/user_profiles",
+        });
+
+        imageUrl = uploadResponse.url; 
+        req.body.profilePic = null;
+        profilePic = null;
+        console.log("ImageKit upload successful! URL:", imageUrl);
+
+      } catch (ikError) {
+        console.error("ImageKit SDK Upload Failure Details:", ikError);
+        return res.status(500).json({ 
+          message: "Image cloud sync failed. Please check backend .env API keys." 
+        });
+      }
+      finally {
+      req.body.postImage = null; 
+      postImage = null;
+    }
+    }
 
         const newPost = await postModel.create({
             user: userId,
@@ -83,9 +92,6 @@ export async function createPost(req, res) {
     }
 }
 
-/**
- * 2. Like / Unlike a Post Toggle
- */
 export async function toggleLikePost(req, res) {
     try {
         const { id: postId } = req.params;
@@ -112,12 +118,7 @@ export async function toggleLikePost(req, res) {
     }
 }
 
-/**
- * 3. Get Feed Posts with Recursive Nested Comment Trees
- */
-/**
- * 3. Get Feed Posts with Recursive Nested Comment Trees (Filters out Deactivated Users)
- */
+
 export async function getFeedPosts(req, res) {
   try {
     const userId = req.user?._id || req.user?.id;
@@ -173,9 +174,6 @@ export async function getFeedPosts(req, res) {
   }
 }
 
-/**
- * 4. Delete a Post
- */
 export async function deletePost(req, res) {
     try {
         const { id: postId } = req.params;
@@ -292,7 +290,9 @@ export async function toggleSavePost(req, res) {
 export async function createStory(req, res) {
   try {
     const userId = req.user?._id || req.user?.id;
-    const { caption, storyImage } = req.body;
+    
+    // 🚀 MEMORY FIX: Keep track of storyImage, but pull it out of req.body right away
+    let { caption, storyImage } = req.body;
 
     // Stories must have an image payload
     if (!storyImage || !storyImage.startsWith("data:image/")) {
@@ -303,6 +303,9 @@ export async function createStory(req, res) {
     if (caption && caption.trim() !== "") {
       const safe = await isContentSafe(caption);
       if (!safe) {
+        // Clear memory before returning response
+        storyImage = null;
+        req.body.storyImage = null;
         return res.status(400).json({ 
           message: "Story blocked! Caption violates community safety guidelines." 
         });
@@ -325,6 +328,12 @@ export async function createStory(req, res) {
       return res.status(500).json({ 
         message: "Story image cloud sync failed. Please check backend .env API keys." 
       });
+    } finally {
+      // 🚀 THE CRUCIAL MEMORY LEAK FIX: 
+      // Forcefully wipe the giant base64 text chunks out of memory immediately, 
+      // whether the upload succeeded or failed!
+      storyImage = null;
+      req.body.storyImage = null;
     }
 
     const newStory = await storyModel.create({
