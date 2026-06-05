@@ -13,6 +13,14 @@ export async function getStreamToken(req,res){
 
 export async function askChatbot(req, res) {
   try {
+    // ✅ FIX: Read your API token safely from your process environment variables
+    const HUGGINGFACE_ACCESS_TOKEN = process.env.HUGGINGFACE_ACCESS_TOKEN;
+
+    if (!HUGGINGFACE_ACCESS_TOKEN) {
+      console.error("⚠️ Configuration Warning: process.env.HUGGINGFACE_ACCESS_TOKEN is missing!");
+      return res.status(500).json({ message: "AI Token configurations are missing from backend environment variables." });
+    }
+
     const { messages } = req.body;
 
     if (!messages || !Array.isArray(messages)) {
@@ -66,14 +74,13 @@ export async function askChatbot(req, res) {
       const buffer = Buffer.from(arrayBuffer);
       const base64Image = `data:image/jpeg;base64,${buffer.toString("base64")}`;
 
-      // Return an HTML or Markdown structured response so your chat widget renders it nicely
       return res.status(200).json({
         role: "assistant",
         content: `🎨 Here is your generated image for: "${prompt}"\n\n<img src="${base64Image}" alt="AI Generated" class="w-full h-auto rounded-xl mt-2 border border-base-300 shadow-md" />`
       });
     }
 
-    // 💬 TEXT FALLBACK: If they are just talking, process normal text chat using the open text engine
+    // 💬 TEXT FALLBACK: Process normal text chat using the open text engine
     console.log("Routing dialogue string streams to Hugging Face Shared Routing Layer...");
     const textResponse = await fetch(
       "https://router.huggingface.co/v1/chat/completions",

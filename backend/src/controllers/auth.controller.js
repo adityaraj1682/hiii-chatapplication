@@ -191,12 +191,18 @@ export async function login(req, res) {
                 expiresIn: "2d"
             });
 
-            res.cookie('jwt', token, {
-                maxAge: 7 * 24 * 60 * 60 * 1000,
-                httpOnly: true,
-                sameSite: "none",
-                secure: true
-            });
+            const isLocalhost = req.get('host').includes('localhost') || req.get('host').includes('127.0.0.1');
+
+                res.cookie('jwt', token, {
+                    maxAge: 7 * 24 * 60 * 60 * 1000,
+                    httpOnly: true,
+                    
+                    // ✅ If it's localhost, use "lax" so Safari can read across ports. Otherwise, keep "none" for production.
+                    sameSite: isLocalhost ? "lax" : "none",
+                    
+                    // ✅ Turn off secure ONLY on localhost so Safari accepts HTTP cookies. Keep it true on production HTTPS.
+                    secure: !isLocalhost 
+                });
 
             return res.status(200).json({
                 success: true,
@@ -607,6 +613,7 @@ export async function updatePassword(req, res) {
 export async function updateProfile(req, res) {
     try {
         const userId = req.user._id; 
+        // Keep these as constants safely
         const { fullName, bio, profilePic } = req.body;
 
         if (!fullName) {
@@ -615,28 +622,27 @@ export async function updateProfile(req, res) {
 
         let imageUrl = profilePic; 
 
-         if (profilePic && profilePic.startsWith("data:image/")) {
-        console.log("Valid Base64 image payload detected. Syncing with ImageKit...");
-      
-        try {
-        const uploadResponse = await imagekit.upload({
-          file: profilePic, 
-          fileName: `avatar_${userId}_${Date.now()}.png`,
-          folder: "/user_profiles",
-        });
+        if (profilePic && profilePic.startsWith("data:image/")) {
+            console.log("Valid Base64 image payload detected. Syncing with ImageKit...");
+          
+            try {
+                const uploadResponse = await imagekit.upload({
+                    file: profilePic, 
+                    fileName: `avatar_${userId}_${Date.now()}.png`,
+                    folder: "/user_profiles",
+                });
 
-        imageUrl = uploadResponse.url; 
-        req.body.profilePic = null;
-        profilePic = null;
-        console.log("ImageKit upload successful! URL:", imageUrl);
+                imageUrl = uploadResponse.url; 
+                // ✅ FIXED: Removed the profilePic = null reassignment that caused the crash
+                console.log("ImageKit upload successful! URL:", imageUrl);
 
-      } catch (ikError) {
-        console.error("ImageKit SDK Upload Failure Details:", ikError);
-        return res.status(500).json({ 
-          message: "Image cloud sync failed. Please check backend .env API keys." 
-        });
-      }
-    }
+            } catch (ikError) {
+                console.error("ImageKit SDK Upload Failure Details:", ikError);
+                return res.status(500).json({ 
+                    message: "Image cloud sync failed. Please check backend .env API keys." 
+                });
+            }
+        }
 
         const updatedUser = await userModel.findByIdAndUpdate(
             userId,
@@ -659,6 +665,7 @@ export async function updateProfile(req, res) {
         return res.status(200).json({ success: true, user: updatedUser });
 
     } catch (error) {
+        // Look closely here in your terminal logs—it will confirm the constant variable assignment crash!
         console.error("Critical fault inside updateProfile pipeline handler engine:", error.message);
         return res.status(500).json({ message: "Internal server data compilation error records" });
     }
