@@ -340,7 +340,7 @@ export async function onboard(req, res) {
     // 🚀 MEMORY FIX: Destructure out fields, using 'let' for profilePic so we can wipe it safely
     let { fullName, bio, nativeLanguage, learningLanguage, location, profilePic } = req.body;
 
-    if (!fullName || !bio || !nativeLanguage || !learningLanguage || !location) {
+    if (!fullName || !bio || !nativeLanguage || !learningLanguage || !location || !profilePic) {
       return res.status(400).json({
         message: "All fields are required",
         missingFields: [

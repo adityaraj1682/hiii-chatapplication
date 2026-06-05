@@ -7,8 +7,8 @@ import path from "path";
 // const apiKey=process.env.STREAM_API_KEY
 // const apiSecret=process.env.STREAM_API_SECRET
 
-const apiKey='pmxyr9jyyg46'
-const apiSecret='z4a8fzauuypqh4bddheat2t6r6h8heqp76j4mhfexq62myzw8cyhh492ebtfzecv'
+const apiKey=process.env.STREAM_API_KEY
+const apiSecret=process.env.STREAM_API_SECRET
 
 if(!apiKey || !apiSecret)
     console.error("Stream API key or secret is not defined")
