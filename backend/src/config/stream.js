@@ -1,14 +1,15 @@
 import { StreamChat } from "stream-chat";
 import dotenv from "dotenv";
 import path from "path";
-
+import { DonutSwinPreTrainedModel } from "@xenova/transformers";
+dotenv.config()
 // // This will look for .env in the folder where you run 'npm start' (the backend folder)
 // dotenv.config({ path: path.join(process.cwd(), ".env") });
-// const apiKey=process.env.STREAM_API_KEY
-// const apiSecret=process.env.STREAM_API_SECRET
-
 const apiKey=process.env.STREAM_API_KEY
 const apiSecret=process.env.STREAM_API_SECRET
+
+// const apiKey='pmxyr9jyyg46'
+// const apiSecret='z4a8fzauuypqh4bddheat2t6r6h8heqp76j4mhfexq62myzw8cyhh492ebtfzecv'
 
 if(!apiKey || !apiSecret)
     console.error("Stream API key or secret is not defined")
